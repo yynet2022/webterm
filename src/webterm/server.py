@@ -171,6 +171,8 @@ def create_app(
         finally:
             read_task.cancel()
             backend.close()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await read_task
             if app_config.once and on_exit is not None:
                 on_exit()
 

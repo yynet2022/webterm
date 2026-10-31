@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import runpy
 import socket
 import sys
@@ -281,6 +282,52 @@ def test_main_starts_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
     assert srv.config.log_level == "warning"
     assert srv.ran is True
     assert srv.should_exit is True
+
+
+def test_main_stop_server_with_running_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ループ稼働時に call_later 経由で should_exit が立つことを検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+    created_servers: list[Any] = []
+    captured_on_exit: list[Any] = []
+    scheduled_delays: list[float] = []
+
+    def spy_create_app(config: Any, **kwargs: Any) -> FastAPI:
+        captured_on_exit.append(kwargs.get("on_exit"))
+        return create_app(config, **kwargs)
+
+    class DummyLoop:
+        def call_later(self, delay: float, callback: Any) -> None:
+            scheduled_delays.append(delay)
+            callback()
+
+    class FakeServer:
+        def __init__(self, config: uvicorn.Config) -> None:
+            self.config = config
+            self.should_exit = False
+            created_servers.append(self)
+
+        def run(self) -> None:
+            if captured_on_exit and captured_on_exit[0] is not None:
+                captured_on_exit[0]()
+
+    monkeypatch.setattr(sys, "argv", ["webterm", "--once"])
+    monkeypatch.setattr(
+        webterm.main, "is_port_available", lambda host, port: True
+    )
+    monkeypatch.setattr(webterm.main, "create_app", spy_create_app)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: DummyLoop())
+    monkeypatch.setattr(uvicorn, "Server", FakeServer)
+
+    main()
+
+    assert len(created_servers) == 1
+    assert scheduled_delays == [0.05]
+    assert created_servers[0].should_exit is True
 
 
 def test_main_suppresses_keyboard_interrupt(

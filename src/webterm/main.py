@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import contextlib
 import shlex
 import socket
@@ -25,6 +26,7 @@ from webterm.server import create_app
 
 MIN_PORT: int = 1
 MAX_PORT: int = 65535
+EXIT_DELAY_SECONDS: float = 0.05
 
 
 def is_port_available(host: str, port: int) -> bool:
@@ -192,10 +194,18 @@ def main() -> None:
 
     server_ref: list[uvicorn.Server] = []
 
-    def stop_server() -> None:
-        """実行中の Uvicorn サーバに終了フラグを設定する。"""
+    def mark_should_exit() -> None:
+        """登録されている Uvicorn サーバに終了フラグを設定する。"""
         for srv in server_ref:
             srv.should_exit = True
+
+    def stop_server() -> None:
+        """WebSocket 切断処理完了後に Uvicorn サーバを停止させる。"""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.call_later(EXIT_DELAY_SECONDS, mark_should_exit)
+        except RuntimeError:
+            mark_should_exit()
 
     app = create_app(config, on_exit=stop_server)
     uvicorn_config = uvicorn.Config(
