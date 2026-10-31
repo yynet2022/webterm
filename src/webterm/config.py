@@ -41,9 +41,11 @@ class AppConfig:
         host: バインドするホスト名または IP アドレス。
         port: バインドするポート番号。
         open_browser: サーバ起動時に自動でブラウザを開くかどうか。
+        auto_port: ポートが使用中の場合に自動で空きポートを探すかどうか。
     """
 
     command: list[str] = field(default_factory=get_default_command)
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     open_browser: bool = False
+    auto_port: bool = True

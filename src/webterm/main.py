@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import shlex
+import socket
 import sys
 from collections.abc import Sequence
 
@@ -16,6 +17,61 @@ from webterm.config import (
     get_default_shell,
 )
 from webterm.server import create_app
+
+MIN_PORT: int = 1
+MAX_PORT: int = 65535
+
+
+def is_port_available(host: str, port: int) -> bool:
+    """指定されたホストとポート番号がバインド可能か判定する。
+
+    Args:
+        host: バインド先ホスト名または IP アドレス。
+        port: 確認するポート番号。
+
+    Returns:
+        bool: 利用可能なら True、使用中またはバインド不可なら False。
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+        return True
+
+
+def resolve_port(host: str, port: int, *, auto_increment: bool) -> int:
+    """利用可能なポート番号を決定する。
+
+    Args:
+        host: バインド先ホスト名または IP アドレス。
+        port: 開始または指定されたポート番号。
+        auto_increment: 使用中の場合にインクリメントして探索するかどうか。
+
+    Returns:
+        int: バインド可能なポート番号。
+
+    Raises:
+        ValueError: ポート番号が有効範囲外の場合。
+        RuntimeError: 利用可能なポートが見つからない場合。
+    """
+    if not (MIN_PORT <= port <= MAX_PORT):
+        raise ValueError(
+            f"Port number must be between {MIN_PORT} and {MAX_PORT}: {port}"
+        )
+
+    if not auto_increment:
+        if not is_port_available(host, port):
+            raise RuntimeError(f"Port {port} is already in use on {host}.")
+        return port
+
+    for candidate in range(port, MAX_PORT + 1):
+        if is_port_available(host, candidate):
+            return candidate
+
+    raise RuntimeError(
+        f"No available port found on {host} in range {port}-{MAX_PORT}."
+    )
 
 
 def split_command(command_str: str) -> list[str]:
@@ -79,8 +135,8 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
         "-p",
         "--port",
         type=int,
-        default=DEFAULT_PORT,
-        help="Port number to bind to (default: 8000)",
+        default=None,
+        help="Port number to bind to (default: 8000, auto-increment if busy)",
     )
     parser.add_argument(
         "--open",
@@ -89,17 +145,31 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
     )
     args = parser.parse_args(argv)
 
+    port = DEFAULT_PORT if args.port is None else args.port
+    auto_port = args.port is None
+
     return AppConfig(
         command=split_command(args.command),
         host=args.host,
-        port=args.port,
+        port=port,
         open_browser=args.open,
+        auto_port=auto_port,
     )
 
 
 def main() -> None:
     """CLI のメインエントリポイント。"""
     config = parse_args()
+    try:
+        config.port = resolve_port(
+            config.host,
+            config.port,
+            auto_increment=config.auto_port,
+        )
+    except (ValueError, RuntimeError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     app = create_app(config)
     uvicorn.run(app, host=config.host, port=config.port, log_level="warning")
 

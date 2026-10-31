@@ -75,3 +75,4 @@ def test_app_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.host == DEFAULT_HOST
     assert config.port == DEFAULT_PORT
     assert config.open_browser is False
+    assert config.auto_port is True
