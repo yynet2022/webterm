@@ -172,6 +172,32 @@
         term.open(document.getElementById("terminal"));
         fitAddon.fit();
 
+        // キーバインド制御（Ctrl+Shift+C での DevTools 抑止とスマート Ctrl+C コピー）
+        term.attachCustomKeyEventHandler((event) => {
+            if (event.ctrlKey && !event.altKey && !event.metaKey) {
+                if (event.shiftKey && event.code === "KeyC") {
+                    event.preventDefault();
+                    if (event.type === "keydown" && term.hasSelection()) {
+                        navigator.clipboard.writeText(term.getSelection());
+                        term.clearSelection();
+                    }
+                    return false;
+                }
+                if (!event.shiftKey && event.code === "KeyC" && term.hasSelection()) {
+                    event.preventDefault();
+                    if (event.type === "keydown") {
+                        navigator.clipboard.writeText(term.getSelection());
+                        term.clearSelection();
+                    }
+                    return false;
+                }
+                if (event.shiftKey && event.code === "KeyV") {
+                    return false;
+                }
+            }
+            return true;
+        });
+
         // WebSocket 通信の初期化
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const basePath = window.location.pathname.replace(/\/$/, "");
