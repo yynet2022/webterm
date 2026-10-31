@@ -131,6 +131,16 @@ def test_index_endpoint_returns_html() -> None:
     assert response.status_code == 200
     assert "<!DOCTYPE html>" in response.text
     assert "xterm.min.js" in response.text
+    assert 'const ACTIVE_THEME_NAME = "dark";' in response.text
+
+
+def test_index_endpoint_applies_custom_theme() -> None:
+    """指定されたカラーテーマ名が HTML に反映されることを検証する。"""
+    app = create_app(AppConfig(theme="dracula"))
+    client = TestClient(app)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'const ACTIVE_THEME_NAME = "dracula";' in response.text
 
 
 def test_websocket_endpoint_communication() -> None:

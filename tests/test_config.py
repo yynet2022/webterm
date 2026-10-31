@@ -9,6 +9,7 @@ import pytest
 from webterm.config import (
     DEFAULT_HOST,
     DEFAULT_PORT,
+    DEFAULT_THEME,
     DEFAULT_UNIX_SHELL,
     DEFAULT_WINDOWS_SHELL,
     AppConfig,
@@ -76,3 +77,4 @@ def test_app_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.port == DEFAULT_PORT
     assert config.open_browser is False
     assert config.auto_port is True
+    assert config.theme == DEFAULT_THEME

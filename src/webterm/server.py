@@ -18,17 +18,22 @@ from webterm.pty_backend import PtyBackend, create_pty
 
 STATIC_DIR: Path = Path(__file__).resolve().parent / "static"
 INDEX_HTML_PATH: Path = STATIC_DIR / "index.html"
+THEME_PLACEHOLDER: str = "__THEME__"
 DEFAULT_ROWS: int = 24
 DEFAULT_COLS: int = 80
 
 
-def load_index_html() -> str:
-    """フロントエンド用の HTML ファイルを読み込んで返す。
+def load_index_html(theme: str = "dark") -> str:
+    """フロントエンド用の HTML ファイルを読み込み、テーマ名を埋め込んで返す。
+
+    Args:
+        theme: 適用するカラーテーマ名。
 
     Returns:
-        str: index.html の文字列内容。
+        str: テーマ設定反映済みの index.html 文字列内容。
     """
-    return INDEX_HTML_PATH.read_text(encoding="utf-8")
+    raw_html = INDEX_HTML_PATH.read_text(encoding="utf-8")
+    return raw_html.replace(THEME_PLACEHOLDER, theme)
 
 
 def create_app(
@@ -45,7 +50,7 @@ def create_app(
         FastAPI: ルーティング設定済みの FastAPI インスタンス。
     """
     app_config = config if config is not None else AppConfig()
-    html_content = load_index_html()
+    html_content = load_index_html(app_config.theme)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

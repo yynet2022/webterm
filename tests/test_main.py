@@ -13,7 +13,7 @@ import uvicorn
 from fastapi import FastAPI
 
 import webterm.main
-from webterm.config import DEFAULT_HOST, DEFAULT_PORT
+from webterm.config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_THEME
 from webterm.main import (
     MAX_PORT,
     is_port_available,
@@ -81,18 +81,36 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.port == DEFAULT_PORT
     assert config.open_browser is False
     assert config.auto_port is True
+    assert config.theme == DEFAULT_THEME
 
 
 def test_parse_args_custom_options() -> None:
     """カスタム CLI 引数が AppConfig に正しく反映されることを検証する。"""
     config = parse_args(
-        ["-c", "python -i", "--host", "0.0.0.0", "-p", "9000", "--open"]
+        [
+            "-c",
+            "python -i",
+            "--host",
+            "0.0.0.0",
+            "-p",
+            "9000",
+            "--open",
+            "-t",
+            "dracula",
+        ]
     )
     assert config.command == ["python", "-i"]
     assert config.host == "0.0.0.0"
     assert config.port == 9000
     assert config.open_browser is True
     assert config.auto_port is False
+    assert config.theme == "dracula"
+
+
+def test_parse_args_invalid_theme_raises() -> None:
+    """未定義のテーマ名を指定した場合に SystemExit となることを検証する。"""
+    with pytest.raises(SystemExit):
+        parse_args(["--theme", "unknown-theme"])
 
 
 def test_is_port_available_true(monkeypatch: pytest.MonkeyPatch) -> None:

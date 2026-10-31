@@ -11,8 +11,10 @@ from collections.abc import Sequence
 import uvicorn
 
 from webterm.config import (
+    AVAILABLE_THEMES,
     DEFAULT_HOST,
     DEFAULT_PORT,
+    DEFAULT_THEME,
     AppConfig,
     get_default_shell,
 )
@@ -143,6 +145,13 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
         action="store_true",
         help="Automatically open the browser when the server starts",
     )
+    parser.add_argument(
+        "-t",
+        "--theme",
+        choices=AVAILABLE_THEMES,
+        default=DEFAULT_THEME,
+        help="Color theme for the terminal (default: dark)",
+    )
     args = parser.parse_args(argv)
 
     port = DEFAULT_PORT if args.port is None else args.port
@@ -154,6 +163,7 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
         port=port,
         open_browser=args.open,
         auto_port=auto_port,
+        theme=args.theme,
     )
 
 

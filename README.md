@@ -63,8 +63,8 @@ webterm
 # 起動と同時に自動でデフォルトブラウザを開く
 webterm --open
 
-# 起動するコマンドやポート番号を指定する例
-webterm -c "python -i" -p 8080 --open
+# 起動するコマンドやポート番号、カラーテーマを指定する例
+webterm -c "python -i" -p 8080 -t dracula --open
 ```
 
 ### コマンドラインオプション
@@ -75,6 +75,7 @@ webterm -c "python -i" -p 8080 --open
 | `--host` | `127.0.0.1` | バインドするホスト名 |
 | `-p`, `--port` | `8000` | バインドするポート番号（未指定時は `8000` から空きポートを自動探索、指定時は使用不可ならエラー終了） |
 | `--open` | `False` | 起動時に自動でブラウザを開く |
+| `-t`, `--theme` | `dark` | カラーテーマ（`dark`, `light`, `dracula`, `solarized-dark`, `monokai`） |
 
 ## 開発・テスト
 

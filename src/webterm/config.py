@@ -10,6 +10,14 @@ DEFAULT_HOST: str = "127.0.0.1"
 DEFAULT_PORT: int = 8000
 DEFAULT_UNIX_SHELL: str = "bash"
 DEFAULT_WINDOWS_SHELL: str = "cmd.exe"
+DEFAULT_THEME: str = "dark"
+AVAILABLE_THEMES: tuple[str, ...] = (
+    "dark",
+    "light",
+    "dracula",
+    "solarized-dark",
+    "monokai",
+)
 
 
 def get_default_shell() -> str:
@@ -42,6 +50,7 @@ class AppConfig:
         port: バインドするポート番号。
         open_browser: サーバ起動時に自動でブラウザを開くかどうか。
         auto_port: ポートが使用中の場合に自動で空きポートを探すかどうか。
+        theme: ターミナルのカラーテーマ名。
     """
 
     command: list[str] = field(default_factory=get_default_command)
@@ -49,3 +58,4 @@ class AppConfig:
     port: int = DEFAULT_PORT
     open_browser: bool = False
     auto_port: bool = True
+    theme: str = DEFAULT_THEME
