@@ -89,6 +89,7 @@ def create_app(
     """
     app_config = config if config is not None else AppConfig()
     html_content = load_index_html(app_config.theme)
+    active_sessions = 0
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -132,11 +133,13 @@ def create_app(
     @app.websocket("/{token}/ws")
     async def websocket_endpoint(websocket: WebSocket, token: str) -> None:
         """ブラウザと PTY の間で双方向通信を行う WebSocket エンドポイント。"""
+        nonlocal active_sessions
         if not secrets.compare_digest(token, app_config.token):
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         await websocket.accept()
+        active_sessions += 1
         backend = pty_factory(app_config.command)
 
         async def pty_to_ws() -> None:
@@ -169,11 +172,16 @@ def create_app(
         except WebSocketDisconnect:
             pass
         finally:
+            active_sessions -= 1
             read_task.cancel()
             backend.close()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await read_task
-            if app_config.once and on_exit is not None:
+            if (
+                app_config.once
+                and active_sessions == 0
+                and on_exit is not None
+            ):
                 on_exit()
 
     return app

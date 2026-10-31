@@ -64,7 +64,7 @@ class AppConfig:
         auto_port: ポートが使用中の場合に自動で空きポートを探すかどうか。
         theme: ターミナルのカラーテーマ名。
         token: アクセス認証用のランダムトークン文字列。
-        once: 最初のターミナルセッション終了時にサーバを停止するかどうか。
+        once: 全ターミナルセッション終了時にサーバを停止するかどうか。
     """
 
     command: list[str] = field(default_factory=get_default_command)

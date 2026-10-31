@@ -378,3 +378,31 @@ def test_websocket_once_mode_triggers_on_exit() -> None:
         websocket.send_json({"type": "input", "data": "exit\n"})
 
     assert exit_called == [True]
+
+
+def test_websocket_once_mode_waits_for_all_sessions() -> None:
+    """Once モードで複数接続時は最後の接続が閉じるまで終了しないことを検証。"""
+    exit_called: list[bool] = []
+
+    def fake_factory(command: list[str]) -> PtyBackend:
+        return FakePtyBackend(command)
+
+    config = AppConfig(command=["test-shell"], once=True)
+    app = create_app(
+        config=config,
+        pty_factory=fake_factory,
+        on_exit=lambda: exit_called.append(True),
+    )
+    client = TestClient(app)
+
+    with client.websocket_connect(f"/{config.token}/ws") as ws1:
+        assert ws1.receive_text() == "hello from pty"
+
+        with client.websocket_connect(f"/{config.token}/ws") as ws2:
+            assert ws2.receive_text() == "hello from pty"
+            ws2.send_json({"type": "input", "data": "exit\n"})
+
+        assert exit_called == []
+        ws1.send_json({"type": "input", "data": "exit\n"})
+
+    assert exit_called == [True]

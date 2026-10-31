@@ -160,7 +160,7 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
     parser.add_argument(
         "--once",
         action="store_true",
-        help="Stop the server after the first terminal session ends",
+        help="Stop the server when the last terminal session ends",
     )
     args = parser.parse_args(argv)
 
