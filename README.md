@@ -13,7 +13,7 @@ FastAPI と xterm.js を使用した、ブラウザベースのターミナル�
 ## ディレクトリ構成
 
 ```text
-wt/
+./
 ├── .gitignore
 ├── pyproject.toml
 ├── README.md
@@ -91,3 +91,9 @@ mypy src tests
 # ユニットテストの実行
 pytest
 ```
+
+---
+
+## ライセンス
+
+MIT License

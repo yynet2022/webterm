@@ -195,6 +195,27 @@ def test_unix_platform_module_import(
     assert namespace["PtyProcess"] is None
 
 
+def test_windows_platform_module_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows 環境としてモジュールを読み込んだ際の分岐を検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+    fake_winpty = types.ModuleType("winpty")
+    fake_winpty.PtyProcess = DummyWinPtyProc  # type: ignore[attr-defined]
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "winpty", fake_winpty)
+
+    module_path = Path(pty_backend.__file__).resolve()
+    namespace = runpy.run_path(str(module_path))
+    assert namespace["fcntl"] is None
+    assert namespace["pty"] is None
+    assert namespace["termios"] is None
+    assert namespace["PtyProcess"] is DummyWinPtyProc
+
+
 async def test_unix_pty_backend_read_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
