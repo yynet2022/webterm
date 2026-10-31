@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import shlex
 import socket
 import sys
@@ -15,6 +16,8 @@ from webterm.config import (
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_THEME,
+    WILDCARD_HOST,
+    WILDCARD_HOSTS,
     AppConfig,
     get_default_shell,
 )
@@ -152,18 +155,25 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
         default=DEFAULT_THEME,
         help="Color theme for the terminal (default: dark)",
     )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Stop the server after the first terminal session ends",
+    )
     args = parser.parse_args(argv)
 
+    host = WILDCARD_HOST if args.host in WILDCARD_HOSTS else args.host
     port = DEFAULT_PORT if args.port is None else args.port
     auto_port = args.port is None
 
     return AppConfig(
         command=split_command(args.command),
-        host=args.host,
+        host=host,
         port=port,
         open_browser=args.open,
         auto_port=auto_port,
         theme=args.theme,
+        once=args.once,
     )
 
 
@@ -180,8 +190,24 @@ def main() -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    app = create_app(config)
-    uvicorn.run(app, host=config.host, port=config.port, log_level="warning")
+    server_ref: list[uvicorn.Server] = []
+
+    def stop_server() -> None:
+        """実行中の Uvicorn サーバに終了フラグを設定する。"""
+        for srv in server_ref:
+            srv.should_exit = True
+
+    app = create_app(config, on_exit=stop_server)
+    uvicorn_config = uvicorn.Config(
+        app,
+        host=config.host,
+        port=config.port,
+        log_level="warning",
+    )
+    server = uvicorn.Server(uvicorn_config)
+    server_ref.append(server)
+    with contextlib.suppress(KeyboardInterrupt):
+        server.run()
 
 
 if __name__ == "__main__":

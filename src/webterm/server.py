@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import secrets
+import socket
 import webbrowser
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse
 
-from webterm.config import AppConfig
+from webterm.config import DEFAULT_HOST, WILDCARD_HOSTS, AppConfig
 from webterm.pty_backend import PtyBackend, create_pty
 
 STATIC_DIR: Path = Path(__file__).resolve().parent / "static"
@@ -28,6 +29,34 @@ INDEX_HTML_PATH: Path = STATIC_DIR / "index.html"
 THEME_PLACEHOLDER: str = "__THEME__"
 DEFAULT_ROWS: int = 24
 DEFAULT_COLS: int = 80
+ROUTING_PROBE_TARGET: tuple[str, int] = ("8.8.8.8", 80)
+
+
+def get_local_ip_addresses() -> list[str]:
+    """ホストマシンに割り当てられている非ループバック IPv4 アドレス一覧を返す。
+
+    Returns:
+        list[str]: 重複を除いた検出済み IPv4 アドレスのリスト。
+    """
+    addresses: list[str] = []
+
+    with (
+        contextlib.suppress(OSError),
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock,
+    ):
+        sock.connect(ROUTING_PROBE_TARGET)
+        primary_ip = str(sock.getsockname()[0])
+        if not primary_ip.startswith("127."):
+            addresses.append(primary_ip)
+
+    with contextlib.suppress(OSError):
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = str(info[4][0])
+            if not ip.startswith("127.") and ip not in addresses:
+                addresses.append(ip)
+
+    return addresses
 
 
 def load_index_html(theme: str = "dark") -> str:
@@ -46,12 +75,14 @@ def load_index_html(theme: str = "dark") -> str:
 def create_app(
     config: AppConfig | None = None,
     pty_factory: Callable[[list[str]], PtyBackend] = create_pty,
+    on_exit: Callable[[], None] | None = None,
 ) -> FastAPI:
     """設定に基づいて FastAPI アプリケーションインスタンスを生成する。
 
     Args:
         config: アプリケーション設定。省略時はデフォルト設定を使用する。
         pty_factory: PTY バックエンドを生成するファクトリ関数。
+        on_exit: once モード時にセッション終了後呼び出されるコールバック。
 
     Returns:
         FastAPI: ルーティング設定済みの FastAPI インスタンス。
@@ -62,11 +93,23 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         """サーバの起動・終了時のライフサイクル処理を行う。"""
-        url = f"http://{app_config.host}:{app_config.port}/{app_config.token}"
         cmd_str = " ".join(app_config.command)
-        print(f"Server started at: {url} (Command: {cmd_str})")
+        is_wildcard = app_config.host in WILDCARD_HOSTS
+        primary_host = DEFAULT_HOST if is_wildcard else app_config.host
+        primary_url = (
+            f"http://{primary_host}:{app_config.port}/{app_config.token}"
+        )
+        print(f"Server started at: {primary_url} (Command: {cmd_str})")
+
+        if is_wildcard:
+            for ip in get_local_ip_addresses():
+                lan_url = f"http://{ip}:{app_config.port}/{app_config.token}"
+                print(f"and {lan_url}")
+
+        print("Press Ctrl+C to stop the server.")
+
         if app_config.open_browser:
-            webbrowser.open(url)
+            webbrowser.open(primary_url)
         yield
 
     app = FastAPI(
@@ -128,5 +171,7 @@ def create_app(
         finally:
             read_task.cancel()
             backend.close()
+            if app_config.once and on_exit is not None:
+                on_exit()
 
     return app

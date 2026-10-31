@@ -8,6 +8,8 @@ import uuid
 from dataclasses import dataclass, field
 
 DEFAULT_HOST: str = "127.0.0.1"
+WILDCARD_HOST: str = "0.0.0.0"
+WILDCARD_HOSTS: tuple[str, ...] = ("0.0.0.0", "0")
 DEFAULT_PORT: int = 8000
 DEFAULT_UNIX_SHELL: str = "bash"
 DEFAULT_WINDOWS_SHELL: str = "cmd.exe"
@@ -62,6 +64,7 @@ class AppConfig:
         auto_port: ポートが使用中の場合に自動で空きポートを探すかどうか。
         theme: ターミナルのカラーテーマ名。
         token: アクセス認証用のランダムトークン文字列。
+        once: 最初のターミナルセッション終了時にサーバを停止するかどうか。
     """
 
     command: list[str] = field(default_factory=get_default_command)
@@ -71,3 +74,4 @@ class AppConfig:
     auto_port: bool = True
     theme: str = DEFAULT_THEME
     token: str = field(default_factory=generate_token)
+    once: bool = False

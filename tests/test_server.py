@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import webbrowser
+from typing import Any
 
 import pytest
 from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
+import webterm.server
 from webterm.config import AppConfig
 from webterm.pty_backend import PtyBackend
-from webterm.server import create_app
+from webterm.server import create_app, get_local_ip_addresses
 
 
 class FakePtyBackend:
@@ -129,6 +132,127 @@ def test_lifespan_with_open_browser(
     assert opened_urls == ["http://127.0.0.1:8888/test-token-1234"]
 
 
+def test_lifespan_wildcard_host_outputs_lan_ips_and_opens_localhost(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """0.0.0.0 指定時に 127.0.0.1 と LAN IP を出力しブラウザを開くか検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+        capsys: pytest の標準出力・標準エラー出力キャプチャフィクスチャ。
+    """
+    opened_urls: list[str] = []
+
+    def fake_open(url: str) -> bool:
+        opened_urls.append(url)
+        return True
+
+    monkeypatch.setattr(webbrowser, "open", fake_open)
+    monkeypatch.setattr(
+        webterm.server,
+        "get_local_ip_addresses",
+        lambda: ["192.168.1.10", "10.0.0.5"],
+    )
+
+    config = AppConfig(
+        command=["cmd.exe"],
+        host="0.0.0.0",
+        port=8000,
+        open_browser=True,
+        token="tok-xyz",
+    )
+    app = create_app(config)
+    with TestClient(app) as client:
+        response = client.get("/tok-xyz")
+        assert response.status_code == 200
+
+    captured = capsys.readouterr()
+    assert (
+        "Server started at: http://127.0.0.1:8000/tok-xyz (Command: cmd.exe)"
+        in captured.out
+    )
+    assert "and http://192.168.1.10:8000/tok-xyz" in captured.out
+    assert "and http://10.0.0.5:8000/tok-xyz" in captured.out
+    assert "Press Ctrl+C to stop the server." in captured.out
+    assert opened_urls == ["http://127.0.0.1:8000/tok-xyz"]
+
+
+def test_get_local_ip_addresses_collects_unique_non_loopback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """非ループバック IP アドレスが重複なく返されることを検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+
+    class DummyUdpSocket:
+        def __enter__(self) -> DummyUdpSocket:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def connect(self, target: tuple[str, int]) -> None:
+            pass
+
+        def getsockname(self) -> tuple[str, int]:
+            return ("192.168.1.50", 54321)
+
+    def fake_getaddrinfo(
+        host: str,
+        port: Any,
+        family: int = 0,
+    ) -> list[tuple[Any, ...]]:
+        return [
+            (socket.AF_INET, 0, 0, "", ("127.0.0.1", 0)),
+            (socket.AF_INET, 0, 0, "", ("192.168.1.50", 0)),
+            (socket.AF_INET, 0, 0, "", ("172.16.0.2", 0)),
+        ]
+
+    monkeypatch.setattr(
+        socket, "socket", lambda *args, **kwargs: DummyUdpSocket()
+    )
+    monkeypatch.setattr(socket, "gethostname", lambda: "my-pc")
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+
+    assert get_local_ip_addresses() == ["192.168.1.50", "172.16.0.2"]
+
+
+def test_get_local_ip_addresses_handles_loopback_and_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """UDP プローブが 127.x を返し getaddrinfo が失敗した場合の動作を検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+
+    class LoopbackUdpSocket:
+        def __enter__(self) -> LoopbackUdpSocket:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def connect(self, target: tuple[str, int]) -> None:
+            pass
+
+        def getsockname(self) -> tuple[str, int]:
+            return ("127.0.0.1", 54321)
+
+    def failing_gethostname() -> str:
+        raise OSError("Hostname resolution failed")
+
+    monkeypatch.setattr(
+        socket, "socket", lambda *args, **kwargs: LoopbackUdpSocket()
+    )
+    monkeypatch.setattr(socket, "gethostname", failing_gethostname)
+
+    assert get_local_ip_addresses() == []
+
+
 def test_index_endpoint_returns_html() -> None:
     """トークン付き URL (GET /{token}) が HTML を返すことを検証する。"""
     config = AppConfig()
@@ -232,3 +356,25 @@ def test_websocket_pty_read_exception() -> None:
 
     assert len(created_backends) == 1
     assert created_backends[0].closed is True
+
+
+def test_websocket_once_mode_triggers_on_exit() -> None:
+    """Once モード時にセッション終了で on_exit が呼ばれることを検証する。"""
+    exit_called: list[bool] = []
+
+    def fake_factory(command: list[str]) -> PtyBackend:
+        return FakePtyBackend(command)
+
+    config = AppConfig(command=["test-shell"], once=True)
+    app = create_app(
+        config=config,
+        pty_factory=fake_factory,
+        on_exit=lambda: exit_called.append(True),
+    )
+    client = TestClient(app)
+
+    with client.websocket_connect(f"/{config.token}/ws") as websocket:
+        assert websocket.receive_text() == "hello from pty"
+        websocket.send_json({"type": "input", "data": "exit\n"})
+
+    assert exit_called == [True]

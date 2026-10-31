@@ -22,6 +22,7 @@ from webterm.main import (
     resolve_port,
     split_command,
 )
+from webterm.server import create_app
 
 
 def test_split_command_windows_unquoted(
@@ -82,6 +83,7 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.open_browser is False
     assert config.auto_port is True
     assert config.theme == DEFAULT_THEME
+    assert config.once is False
 
 
 def test_parse_args_custom_options() -> None:
@@ -97,6 +99,7 @@ def test_parse_args_custom_options() -> None:
             "--open",
             "-t",
             "dracula",
+            "--once",
         ]
     )
     assert config.command == ["python", "-i"]
@@ -105,6 +108,13 @@ def test_parse_args_custom_options() -> None:
     assert config.open_browser is True
     assert config.auto_port is False
     assert config.theme == "dracula"
+    assert config.once is True
+
+
+def test_parse_args_wildcard_host_shorthand() -> None:
+    """--host 0 が 0.0.0.0 に正規化されることを検証する。"""
+    config = parse_args(["--host", "0"])
+    assert config.host == "0.0.0.0"
 
 
 def test_parse_args_invalid_theme_raises() -> None:
@@ -226,16 +236,29 @@ def test_resolve_port_auto_increment_exhausted_raises(
 
 
 def test_main_starts_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
-    """エントリポイント関数 main が uvicorn.run を呼び出すことを検証する。
+    """エントリポイント関数 main が uvicorn.Server.run を呼ぶことを検証する。
 
     Args:
         monkeypatch: pytest の MonkeyPatch フィクスチャ。
     """
-    called_args: dict[str, Any] = {}
+    created_servers: list[Any] = []
+    captured_on_exit: list[Any] = []
 
-    def fake_uvicorn_run(app: Any, **kwargs: Any) -> None:
-        called_args["app"] = app
-        called_args.update(kwargs)
+    def spy_create_app(config: Any, **kwargs: Any) -> FastAPI:
+        captured_on_exit.append(kwargs.get("on_exit"))
+        return create_app(config, **kwargs)
+
+    class FakeServer:
+        def __init__(self, config: uvicorn.Config) -> None:
+            self.config = config
+            self.should_exit = False
+            self.ran = False
+            created_servers.append(self)
+
+        def run(self) -> None:
+            self.ran = True
+            if captured_on_exit and captured_on_exit[0] is not None:
+                captured_on_exit[0]()
 
     monkeypatch.setattr(
         sys,
@@ -245,14 +268,44 @@ def test_main_starts_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         webterm.main, "is_port_available", lambda host, port: True
     )
-    monkeypatch.setattr(uvicorn, "run", fake_uvicorn_run)
+    monkeypatch.setattr(webterm.main, "create_app", spy_create_app)
+    monkeypatch.setattr(uvicorn, "Server", FakeServer)
 
     main()
 
-    assert isinstance(called_args["app"], FastAPI)
-    assert called_args["host"] == "127.0.0.1"
-    assert called_args["port"] == 8123
-    assert called_args["log_level"] == "warning"
+    assert len(created_servers) == 1
+    srv = created_servers[0]
+    assert isinstance(srv.config.app, FastAPI)
+    assert srv.config.host == "127.0.0.1"
+    assert srv.config.port == 8123
+    assert srv.config.log_level == "warning"
+    assert srv.ran is True
+    assert srv.should_exit is True
+
+
+def test_main_suppresses_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ctrl+C による KeyboardInterrupt が抑制され正常終了することを検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+
+    class InterruptingServer:
+        def __init__(self, config: uvicorn.Config) -> None:
+            self.config = config
+
+        def run(self) -> None:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(sys, "argv", ["webterm"])
+    monkeypatch.setattr(
+        webterm.main, "is_port_available", lambda host, port: True
+    )
+    monkeypatch.setattr(uvicorn, "Server", InterruptingServer)
+
+    main()
 
 
 def test_main_exits_on_busy_explicit_port(
@@ -286,9 +339,12 @@ def test_main_module_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     called: list[bool] = []
 
-    def fake_uvicorn_run(app: Any, **_kwargs: Any) -> None:
-        assert isinstance(app, FastAPI)
-        called.append(True)
+    class DummyServer:
+        def __init__(self, config: uvicorn.Config) -> None:
+            assert isinstance(config.app, FastAPI)
+
+        def run(self) -> None:
+            called.append(True)
 
     monkeypatch.setattr(sys, "argv", ["webterm"])
     monkeypatch.setattr(
@@ -296,7 +352,7 @@ def test_main_module_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
         "bind",
         lambda self, address: None,
     )
-    monkeypatch.setattr(uvicorn, "run", fake_uvicorn_run)
+    monkeypatch.setattr(uvicorn, "Server", DummyServer)
 
     main_path = Path(webterm.main.__file__).resolve()
     runpy.run_path(str(main_path), run_name="__main__")

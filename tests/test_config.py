@@ -90,3 +90,4 @@ def test_app_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.auto_port is True
     assert config.theme == DEFAULT_THEME
     assert str(uuid.UUID(config.token, version=4)) == config.token
+    assert config.once is False
