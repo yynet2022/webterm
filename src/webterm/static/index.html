@@ -202,6 +202,14 @@
             fitAddon.fit();
             sendResize();
         });
+
+        // 接続中は誤ってタブを閉じるのを防止する
+        window.addEventListener("beforeunload", (event) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                event.preventDefault();
+                event.returnValue = "";
+            }
+        });
     </script>
 </body>
 </html>

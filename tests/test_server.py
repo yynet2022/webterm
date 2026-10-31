@@ -263,6 +263,7 @@ def test_index_endpoint_returns_html() -> None:
     assert "<!DOCTYPE html>" in response.text
     assert "xterm.min.js" in response.text
     assert 'const ACTIVE_THEME_NAME = "dark";' in response.text
+    assert 'window.addEventListener("beforeunload"' in response.text
 
 
 def test_index_endpoint_applies_custom_theme() -> None:
