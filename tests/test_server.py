@@ -265,6 +265,7 @@ def test_index_endpoint_returns_html() -> None:
     assert 'const ACTIVE_THEME_NAME = "dark";' in response.text
     assert 'window.addEventListener("beforeunload"' in response.text
     assert "term.attachCustomKeyEventHandler" in response.text
+    assert 'terminalElement.addEventListener("contextmenu"' in response.text
 
 
 def test_index_endpoint_applies_custom_theme() -> None:

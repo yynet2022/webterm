@@ -169,25 +169,31 @@
         term.loadAddon(unicode11Addon);
         term.unicode.activeVersion = UNICODE_VERSION;
 
-        term.open(document.getElementById("terminal"));
+        const terminalElement = document.getElementById("terminal");
+        term.open(terminalElement);
         fitAddon.fit();
+
+        const copySelection = () => {
+            if (term.hasSelection()) {
+                navigator.clipboard.writeText(term.getSelection());
+                term.clearSelection();
+            }
+        };
 
         // キーバインド制御（Ctrl+Shift+C での DevTools 抑止とスマート Ctrl+C コピー）
         term.attachCustomKeyEventHandler((event) => {
             if (event.ctrlKey && !event.altKey && !event.metaKey) {
                 if (event.shiftKey && event.code === "KeyC") {
                     event.preventDefault();
-                    if (event.type === "keydown" && term.hasSelection()) {
-                        navigator.clipboard.writeText(term.getSelection());
-                        term.clearSelection();
+                    if (event.type === "keydown") {
+                        copySelection();
                     }
                     return false;
                 }
                 if (!event.shiftKey && event.code === "KeyC" && term.hasSelection()) {
                     event.preventDefault();
                     if (event.type === "keydown") {
-                        navigator.clipboard.writeText(term.getSelection());
-                        term.clearSelection();
+                        copySelection();
                     }
                     return false;
                 }
@@ -196,6 +202,23 @@
                 }
             }
             return true;
+        });
+
+        // 右クリック制御（選択中はコピー、非選択時はペースト）
+        terminalElement.addEventListener("contextmenu", async (event) => {
+            event.preventDefault();
+            if (term.hasSelection()) {
+                copySelection();
+                return;
+            }
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text) {
+                    term.paste(text);
+                }
+            } catch {
+                // クリップボード読み取り権限がない場合は無視する
+            }
         });
 
         // WebSocket 通信の初期化
