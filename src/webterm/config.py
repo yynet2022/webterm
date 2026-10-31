@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from dataclasses import dataclass, field
 
 DEFAULT_HOST: str = "127.0.0.1"
@@ -40,6 +41,15 @@ def get_default_command() -> list[str]:
     return [get_default_shell()]
 
 
+def generate_token() -> str:
+    """アクセス認証用のランダムな UUID4 トークン文字列を生成して返す。
+
+    Returns:
+        str: ランダムな UUID4 トークン文字列。
+    """
+    return str(uuid.uuid4())
+
+
 @dataclass
 class AppConfig:
     """Web ターミナルサーバの起動設定を保持するデータクラス。
@@ -51,6 +61,7 @@ class AppConfig:
         open_browser: サーバ起動時に自動でブラウザを開くかどうか。
         auto_port: ポートが使用中の場合に自動で空きポートを探すかどうか。
         theme: ターミナルのカラーテーマ名。
+        token: アクセス認証用のランダムトークン文字列。
     """
 
     command: list[str] = field(default_factory=get_default_command)
@@ -59,3 +70,4 @@ class AppConfig:
     open_browser: bool = False
     auto_port: bool = True
     theme: str = DEFAULT_THEME
+    token: str = field(default_factory=generate_token)

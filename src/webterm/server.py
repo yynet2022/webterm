@@ -5,12 +5,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import secrets
 import webbrowser
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.responses import HTMLResponse
 
 from webterm.config import AppConfig
@@ -55,23 +62,37 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         """サーバの起動・終了時のライフサイクル処理を行う。"""
-        url = f"http://{app_config.host}:{app_config.port}"
+        url = f"http://{app_config.host}:{app_config.port}/{app_config.token}"
         cmd_str = " ".join(app_config.command)
         print(f"Server started at: {url} (Command: {cmd_str})")
         if app_config.open_browser:
             webbrowser.open(url)
         yield
 
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI(
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
 
-    @app.get("/")
-    async def index() -> HTMLResponse:
-        """ターミナル画面の HTML を返すエンドポイント。"""
+    @app.get("/{token}")
+    async def index(token: str) -> HTMLResponse:
+        """トークンを検証し、ターミナル画面の HTML を返すエンドポイント。"""
+        if not secrets.compare_digest(token, app_config.token):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Not Found",
+            )
         return HTMLResponse(html_content)
 
-    @app.websocket("/ws")
-    async def websocket_endpoint(websocket: WebSocket) -> None:
+    @app.websocket("/{token}/ws")
+    async def websocket_endpoint(websocket: WebSocket, token: str) -> None:
         """ブラウザと PTY の間で双方向通信を行う WebSocket エンドポイント。"""
+        if not secrets.compare_digest(token, app_config.token):
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         await websocket.accept()
         backend = pty_factory(app_config.command)
 

@@ -90,9 +90,10 @@ def test_lifespan_without_open_browser(
 
     monkeypatch.setattr(webbrowser, "open", fake_open)
 
-    app = create_app(AppConfig(open_browser=False))
+    config = AppConfig(open_browser=False)
+    app = create_app(config)
     with TestClient(app) as client:
-        response = client.get("/")
+        response = client.get(f"/{config.token}")
         assert response.status_code == 200
 
     assert opened_urls == []
@@ -114,20 +115,26 @@ def test_lifespan_with_open_browser(
 
     monkeypatch.setattr(webbrowser, "open", fake_open)
 
-    config = AppConfig(host="127.0.0.1", port=8888, open_browser=True)
+    config = AppConfig(
+        host="127.0.0.1",
+        port=8888,
+        open_browser=True,
+        token="test-token-1234",
+    )
     app = create_app(config)
     with TestClient(app) as client:
-        response = client.get("/")
+        response = client.get("/test-token-1234")
         assert response.status_code == 200
 
-    assert opened_urls == ["http://127.0.0.1:8888"]
+    assert opened_urls == ["http://127.0.0.1:8888/test-token-1234"]
 
 
 def test_index_endpoint_returns_html() -> None:
-    """ルートエンドポイント (GET /) が HTML を返すことを検証する。"""
-    app = create_app()
+    """トークン付き URL (GET /{token}) が HTML を返すことを検証する。"""
+    config = AppConfig()
+    app = create_app(config)
     client = TestClient(app)
-    response = client.get("/")
+    response = client.get(f"/{config.token}")
     assert response.status_code == 200
     assert "<!DOCTYPE html>" in response.text
     assert "xterm.min.js" in response.text
@@ -136,15 +143,47 @@ def test_index_endpoint_returns_html() -> None:
 
 def test_index_endpoint_applies_custom_theme() -> None:
     """指定されたカラーテーマ名が HTML に反映されることを検証する。"""
-    app = create_app(AppConfig(theme="dracula"))
+    config = AppConfig(theme="dracula")
+    app = create_app(config)
     client = TestClient(app)
-    response = client.get("/")
+    response = client.get(f"/{config.token}")
     assert response.status_code == 200
     assert 'const ACTIVE_THEME_NAME = "dracula";' in response.text
 
 
+def test_index_endpoint_rejects_invalid_token() -> None:
+    """不正なトークンでアクセスした際に 404 Not Found が返ることを検証する。"""
+    config = AppConfig(token="valid-token")
+    app = create_app(config)
+    client = TestClient(app)
+    assert client.get("/invalid-token").status_code == 404
+    assert client.get("/").status_code == 404
+
+
+def test_websocket_endpoint_rejects_invalid_token() -> None:
+    """不正なトークンで WebSocket 接続した際に切断されることを検証する。"""
+    created_backends: list[FakePtyBackend] = []
+
+    def fake_factory(command: list[str]) -> PtyBackend:
+        backend = FakePtyBackend(command)
+        created_backends.append(backend)
+        return backend
+
+    config = AppConfig(command=["test-shell"], token="valid-token")
+    app = create_app(config=config, pty_factory=fake_factory)
+    client = TestClient(app)
+
+    with (
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect("/invalid-token/ws"),
+    ):
+        pass
+
+    assert created_backends == []
+
+
 def test_websocket_endpoint_communication() -> None:
-    """WebSocket エンドポイント (/ws) の入出力とリサイズを検証する。"""
+    """WebSocket エンドポイント (/{token}/ws) の入出力とリサイズを検証する。"""
     created_backends: list[FakePtyBackend] = []
 
     def fake_factory(command: list[str]) -> PtyBackend:
@@ -156,7 +195,7 @@ def test_websocket_endpoint_communication() -> None:
     app = create_app(config=config, pty_factory=fake_factory)
     client = TestClient(app)
 
-    with client.websocket_connect("/ws") as websocket:
+    with client.websocket_connect(f"/{config.token}/ws") as websocket:
         output = websocket.receive_text()
         assert output == "hello from pty"
 
@@ -187,7 +226,7 @@ def test_websocket_pty_read_exception() -> None:
 
     with (
         pytest.raises(WebSocketDisconnect),
-        client.websocket_connect("/ws") as websocket,
+        client.websocket_connect(f"/{config.token}/ws") as websocket,
     ):
         websocket.receive_text()
 

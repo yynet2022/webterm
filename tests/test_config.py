@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import uuid
 
 import pytest
 
@@ -13,6 +14,7 @@ from webterm.config import (
     DEFAULT_UNIX_SHELL,
     DEFAULT_WINDOWS_SHELL,
     AppConfig,
+    generate_token,
     get_default_command,
     get_default_shell,
 )
@@ -64,6 +66,15 @@ def test_get_default_command(monkeypatch: pytest.MonkeyPatch) -> None:
     assert get_default_command() == [DEFAULT_WINDOWS_SHELL]
 
 
+def test_generate_token_returns_valid_uuid4() -> None:
+    """generate_token が有効な UUID4 を毎回異なる値で返すことを検証する。"""
+    token1 = generate_token()
+    token2 = generate_token()
+    parsed = uuid.UUID(token1, version=4)
+    assert str(parsed) == token1
+    assert token1 != token2
+
+
 def test_app_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """AppConfig のデフォルト属性値が正しく初期化されることを検証する。
 
@@ -78,3 +89,4 @@ def test_app_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.open_browser is False
     assert config.auto_port is True
     assert config.theme == DEFAULT_THEME
+    assert str(uuid.UUID(config.token, version=4)) == config.token

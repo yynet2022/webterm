@@ -174,7 +174,8 @@
 
         // WebSocket 通信の初期化
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+        const basePath = window.location.pathname.replace(/\/$/, "");
+        const ws = new WebSocket(`${protocol}//${window.location.host}${basePath}/ws`);
 
         const sendResize = () => {
             if (ws.readyState === WebSocket.OPEN) {
