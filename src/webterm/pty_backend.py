@@ -99,25 +99,33 @@ class UnixPtyBackend:
             str: 読み取った文字列データ。EOF の場合は空文字列。
         """
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[bytes] = loop.create_future()
 
-        def _on_readable() -> None:
-            loop.remove_reader(self.master_fd)
-            try:
-                data = os.read(self.master_fd, READ_BUFFER_SIZE)
-                future.set_result(data)
-            except OSError:
-                # Linux の pty では子プロセス終了時に EIO
-                # (Input/output error) が送出される
-                future.set_result(b"")
+        while True:
+            future: asyncio.Future[bytes] = loop.create_future()
 
-        loop.add_reader(self.master_fd, _on_readable)
-        try:
-            raw = await future
-            return self._decoder.decode(raw, final=(not raw))
-        finally:
-            with contextlib.suppress(Exception):
+            def _on_readable(fut: asyncio.Future[bytes] = future) -> None:
                 loop.remove_reader(self.master_fd)
+                try:
+                    data = os.read(self.master_fd, READ_BUFFER_SIZE)
+                    fut.set_result(data)
+                except OSError:
+                    # Linux の pty では子プロセス終了時に EIO
+                    # (Input/output error) が送出される
+                    fut.set_result(b"")
+
+            loop.add_reader(self.master_fd, _on_readable)
+            try:
+                raw = await future
+            finally:
+                with contextlib.suppress(Exception):
+                    loop.remove_reader(self.master_fd)
+
+            if not raw:
+                return self._decoder.decode(b"", final=True)
+
+            decoded = self._decoder.decode(raw, final=False)
+            if decoded:
+                return decoded
 
     def write(self, data: str) -> None:
         """PTY に入力データを書き込む。

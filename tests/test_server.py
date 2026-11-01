@@ -330,6 +330,7 @@ def test_websocket_endpoint_communication() -> None:
         websocket.send_json([1, 2, 3])
         websocket.send_json({"type": "resize", "rows": "invalid", "cols": 80})
         websocket.send_json({"type": "resize", "rows": 0, "cols": 80})
+        websocket.send_json({"type": "resize", "rows": 70000, "cols": 80})
         websocket.send_json({"type": "resize", "rows": 40, "cols": 120})
         websocket.send_json({"type": "unknown"})
         websocket.send_json({"type": "input", "data": "exit\n"})

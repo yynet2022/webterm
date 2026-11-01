@@ -305,7 +305,7 @@ async def test_unix_pty_backend_read_split_multibyte_utf8(
         monkeypatch: pytest の MonkeyPatch フィクスチャ。
     """
     backend, _, _ = _setup_unix_mocks(monkeypatch)
-    chunks = [b"\xe3\x81", b"\x82"]
+    chunks = [b"\xe3\x81", b"\x82", b""]
 
     loop = asyncio.get_running_loop()
     monkeypatch.setattr(
@@ -322,8 +322,8 @@ async def test_unix_pty_backend_read_split_multibyte_utf8(
 
     first = await backend.read()
     second = await backend.read()
-    assert first == ""
-    assert second == "あ"
+    assert first == "あ"
+    assert second == ""
 
 
 def test_unix_pty_backend_write_and_resize(

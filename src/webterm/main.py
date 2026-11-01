@@ -202,12 +202,10 @@ def main() -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    server_ref: list[uvicorn.Server] = []
-
     def mark_should_exit() -> None:
-        """登録されている Uvicorn サーバに終了フラグを設定する。"""
-        for srv in server_ref:
-            srv.should_exit = True
+        """アクティブなセッションが 0 件であれば Uvicorn サーバを停止する。"""
+        if app.state.active_sessions == 0:
+            server.should_exit = True
 
     def stop_server() -> None:
         """WebSocket 切断処理完了後に Uvicorn サーバを停止させる。"""
@@ -225,7 +223,6 @@ def main() -> None:
         log_level="warning",
     )
     server = uvicorn.Server(uvicorn_config)
-    server_ref.append(server)
     with contextlib.suppress(KeyboardInterrupt):
         server.run()
 

@@ -366,6 +366,11 @@ def test_main_stop_server_with_running_loop(
 
         def run(self) -> None:
             if captured_on_exit and captured_on_exit[0] is not None:
+                assert isinstance(self.config.app, FastAPI)
+                self.config.app.state.active_sessions = 1
+                captured_on_exit[0]()
+                assert self.should_exit is False
+                self.config.app.state.active_sessions = 0
                 captured_on_exit[0]()
 
     monkeypatch.setattr(sys, "argv", ["webterm", "--once"])
@@ -379,7 +384,7 @@ def test_main_stop_server_with_running_loop(
     main()
 
     assert len(created_servers) == 1
-    assert scheduled_delays == [0.05]
+    assert scheduled_delays == [0.05, 0.05]
     assert created_servers[0].should_exit is True
 
 

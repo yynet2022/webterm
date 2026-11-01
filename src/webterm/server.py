@@ -22,7 +22,12 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse
 
-from webterm.config import DEFAULT_HOST, WILDCARD_HOSTS, AppConfig
+from webterm.config import (
+    DEFAULT_HOST,
+    DEFAULT_THEME,
+    WILDCARD_HOSTS,
+    AppConfig,
+)
 from webterm.pty_backend import PtyBackend, create_pty
 
 STATIC_DIR: Path = Path(__file__).resolve().parent / "static"
@@ -30,6 +35,7 @@ INDEX_HTML_PATH: Path = STATIC_DIR / "index.html"
 THEME_PLACEHOLDER: str = "__THEME__"
 DEFAULT_ROWS: int = 24
 DEFAULT_COLS: int = 80
+MAX_TERMINAL_DIMENSION: int = 65535
 ROUTING_PROBE_TARGET: tuple[str, int] = ("8.8.8.8", 80)
 
 
@@ -60,7 +66,7 @@ def get_local_ip_addresses() -> list[str]:
     return addresses
 
 
-def load_index_html(theme: str = "dark") -> str:
+def load_index_html(theme: str = DEFAULT_THEME) -> str:
     """フロントエンド用の HTML ファイルを読み込み、テーマ名を埋め込んで返す。
 
     Args:
@@ -71,6 +77,36 @@ def load_index_html(theme: str = "dark") -> str:
     """
     raw_html = INDEX_HTML_PATH.read_text(encoding="utf-8")
     return raw_html.replace(THEME_PLACEHOLDER, theme)
+
+
+def handle_client_message(raw_msg: str, backend: PtyBackend) -> None:
+    """クライアントから受信した JSON メッセージを解析して PTY に反映する。
+
+    Args:
+        raw_msg: クライアントから受信した JSON 文字列。
+        backend: 操作対象の PTY バックエンドインスタンス。
+    """
+    try:
+        msg = json.loads(raw_msg)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(msg, dict):
+        return
+
+    msg_type = msg.get("type")
+    if msg_type == "input":
+        backend.write(str(msg.get("data", "")))
+    elif msg_type == "resize":
+        try:
+            rows = int(msg.get("rows", DEFAULT_ROWS))
+            cols = int(msg.get("cols", DEFAULT_COLS))
+        except (ValueError, TypeError):
+            return
+        if (
+            1 <= rows <= MAX_TERMINAL_DIMENSION
+            and 1 <= cols <= MAX_TERMINAL_DIMENSION
+        ):
+            backend.resize(rows, cols)
 
 
 def create_app(
@@ -90,7 +126,6 @@ def create_app(
     """
     app_config = config if config is not None else AppConfig()
     html_content = load_index_html(app_config.theme)
-    active_sessions = 0
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -120,6 +155,7 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
     )
+    app.state.active_sessions = 0
 
     @app.get("/{token}")
     async def index(token: str) -> HTMLResponse:
@@ -134,13 +170,12 @@ def create_app(
     @app.websocket("/{token}/ws")
     async def websocket_endpoint(websocket: WebSocket, token: str) -> None:
         """ブラウザと PTY の間で双方向通信を行う WebSocket エンドポイント。"""
-        nonlocal active_sessions
         if not secrets.compare_digest(token, app_config.token):
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         await websocket.accept()
-        active_sessions += 1
+        app.state.active_sessions += 1
         try:
             try:
                 backend = pty_factory(app_config.command)
@@ -177,24 +212,7 @@ def create_app(
             try:
                 while True:
                     raw_msg = await websocket.receive_text()
-                    try:
-                        msg = json.loads(raw_msg)
-                    except json.JSONDecodeError:
-                        continue
-                    if not isinstance(msg, dict):
-                        continue
-
-                    msg_type = msg.get("type")
-                    if msg_type == "input":
-                        backend.write(str(msg.get("data", "")))
-                    elif msg_type == "resize":
-                        try:
-                            rows = int(msg.get("rows", DEFAULT_ROWS))
-                            cols = int(msg.get("cols", DEFAULT_COLS))
-                        except (ValueError, TypeError):
-                            continue
-                        if rows > 0 and cols > 0:
-                            backend.resize(rows, cols)
+                    handle_client_message(raw_msg, backend)
             except (WebSocketDisconnect, OSError, EOFError, RuntimeError):
                 pass
             finally:
@@ -205,10 +223,10 @@ def create_app(
                 ):
                     await read_task
         finally:
-            active_sessions -= 1
+            app.state.active_sessions -= 1
             if (
                 app_config.once
-                and active_sessions == 0
+                and app.state.active_sessions == 0
                 and on_exit is not None
             ):
                 on_exit()
