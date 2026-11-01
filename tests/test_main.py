@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import runpy
 import socket
 import sys
@@ -166,6 +167,58 @@ def test_is_port_available_false(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(socket, "socket", lambda *args, **kwargs: BusySocket())
     assert is_port_available("127.0.0.1", 8000) is False
+
+
+def test_is_port_available_unresolvable_host_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ホスト名解決エラー時に ValueError が送出されることを検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+
+    class GaiErrorSocket:
+        def __enter__(self) -> GaiErrorSocket:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def bind(self, address: tuple[str, int]) -> None:
+            raise socket.gaierror("Name or service not known")
+
+    monkeypatch.setattr(
+        socket, "socket", lambda *args, **kwargs: GaiErrorSocket()
+    )
+    with pytest.raises(ValueError, match="Cannot resolve host"):
+        is_port_available("invalid.host.local", 8000)
+
+
+def test_is_port_available_addr_not_avail_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """バインド不能アドレス指定時に ValueError が送出されることを検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+
+    class AddrNotAvailSocket:
+        def __enter__(self) -> AddrNotAvailSocket:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def bind(self, address: tuple[str, int]) -> None:
+            raise OSError(errno.EADDRNOTAVAIL, "Cannot assign address")
+
+    monkeypatch.setattr(
+        socket, "socket", lambda *args, **kwargs: AddrNotAvailSocket()
+    )
+    with pytest.raises(ValueError, match="Cannot bind to address"):
+        is_port_available("192.0.2.99", 8000)
 
 
 def test_resolve_port_invalid_range() -> None:
@@ -376,6 +429,26 @@ def test_main_exits_on_busy_explicit_port(
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "Error: Port 8080 is already in use" in captured.err
+
+
+def test_main_exits_on_empty_command(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """空のコマンド文字列が指定された場合にエラー終了することを検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+        capsys: pytest の標準出力・標準エラー出力キャプチャフィクスチャ。
+    """
+    monkeypatch.setattr(sys, "argv", ["webterm", "-c", "   "])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error: Command string must not be empty" in captured.err
 
 
 def test_main_module_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:

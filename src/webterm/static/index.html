@@ -175,7 +175,10 @@
 
         const copySelection = () => {
             if (term.hasSelection()) {
-                navigator.clipboard.writeText(term.getSelection());
+                const selectedText = term.getSelection();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(selectedText).catch(() => {});
+                }
                 term.clearSelection();
             }
         };
@@ -209,6 +212,9 @@
             event.preventDefault();
             if (term.hasSelection()) {
                 copySelection();
+                return;
+            }
+            if (!navigator.clipboard || !navigator.clipboard.readText) {
                 return;
             }
             try {

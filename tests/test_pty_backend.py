@@ -272,6 +272,60 @@ async def test_unix_pty_backend_read_oserror(
     assert result == ""
 
 
+def test_unix_pty_backend_init_closes_fds_on_popen_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Popen 失敗時に master_fd と slave_fd の両方が閉じられることを検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+    closed_fds: list[int] = []
+    fake_pty = types.SimpleNamespace(openpty=lambda: (10, 11))
+    monkeypatch.setattr(pty_backend, "pty", fake_pty)
+    monkeypatch.setattr(os, "close", lambda fd: closed_fds.append(fd))
+
+    def failing_popen(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError("No such file or directory")
+
+    monkeypatch.setattr(subprocess, "Popen", failing_popen)
+
+    with pytest.raises(FileNotFoundError):
+        UnixPtyBackend(["/nonexistent/bin"])
+
+    assert sorted(closed_fds) == [10, 11]
+
+
+async def test_unix_pty_backend_read_split_multibyte_utf8(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """バッファ境界で分割された UTF-8 マルチバイト文字が復元されることを検証。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+    backend, _, _ = _setup_unix_mocks(monkeypatch)
+    chunks = [b"\xe3\x81", b"\x82"]
+
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(
+        loop,
+        "add_reader",
+        lambda _fd, callback: callback(),
+    )
+    monkeypatch.setattr(loop, "remove_reader", lambda _fd: None)
+    monkeypatch.setattr(
+        os,
+        "read",
+        lambda _fd, _size: chunks.pop(0),
+    )
+
+    first = await backend.read()
+    second = await backend.read()
+    assert first == ""
+    assert second == "あ"
+
+
 def test_unix_pty_backend_write_and_resize(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

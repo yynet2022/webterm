@@ -326,6 +326,10 @@ def test_websocket_endpoint_communication() -> None:
         output = websocket.receive_text()
         assert output == "hello from pty"
 
+        websocket.send_text("not-valid-json")
+        websocket.send_json([1, 2, 3])
+        websocket.send_json({"type": "resize", "rows": "invalid", "cols": 80})
+        websocket.send_json({"type": "resize", "rows": 0, "cols": 80})
         websocket.send_json({"type": "resize", "rows": 40, "cols": 120})
         websocket.send_json({"type": "unknown"})
         websocket.send_json({"type": "input", "data": "exit\n"})
@@ -408,4 +412,34 @@ def test_websocket_once_mode_waits_for_all_sessions() -> None:
         assert exit_called == []
         ws1.send_json({"type": "input", "data": "exit\n"})
 
+    assert exit_called == [True]
+
+
+def test_websocket_pty_factory_failure_cleans_up(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PTY 起動失敗時にエラー送信とセッション解放が行われることを検証する。
+
+    Args:
+        capsys: pytest の標準出力・標準エラー出力キャプチャフィクスチャ。
+    """
+    exit_called: list[bool] = []
+
+    def broken_factory(_command: list[str]) -> PtyBackend:
+        raise FileNotFoundError("command not found")
+
+    config = AppConfig(command=["nonexistent"], once=True)
+    app = create_app(
+        config=config,
+        pty_factory=broken_factory,
+        on_exit=lambda: exit_called.append(True),
+    )
+    client = TestClient(app)
+
+    with client.websocket_connect(f"/{config.token}/ws") as websocket:
+        msg = websocket.receive_text()
+        assert "Failed to launch command" in msg
+
+    captured = capsys.readouterr()
+    assert "Error: Failed to launch command" in captured.err
     assert exit_called == [True]

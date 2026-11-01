@@ -7,6 +7,7 @@ import contextlib
 import json
 import secrets
 import socket
+import sys
 import webbrowser
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -140,43 +141,71 @@ def create_app(
 
         await websocket.accept()
         active_sessions += 1
-        backend = pty_factory(app_config.command)
+        try:
+            try:
+                backend = pty_factory(app_config.command)
+            except (OSError, RuntimeError) as exc:
+                print(
+                    f"Error: Failed to launch command: {exc}",
+                    file=sys.stderr,
+                )
+                error_msg = (
+                    f"\r\n\x1b[31m[Error: Failed to launch command: {exc}]"
+                    "\x1b[0m\r\n"
+                )
+                with contextlib.suppress(OSError, RuntimeError):
+                    await websocket.send_text(error_msg)
+                    await websocket.close()
+                return
 
-        async def pty_to_ws() -> None:
-            """PTY の出力を読み取って WebSocket クライアントへ送信する。"""
+            async def pty_to_ws() -> None:
+                """PTY の出力を読み取って WebSocket クライアントへ送信する。"""
+                try:
+                    while True:
+                        output = await backend.read()
+                        if not output:
+                            break
+                        await websocket.send_text(output)
+                except (WebSocketDisconnect, OSError, RuntimeError):
+                    pass
+                finally:
+                    with contextlib.suppress(OSError, RuntimeError):
+                        await websocket.close()
+
+            read_task = asyncio.create_task(pty_to_ws())
+
             try:
                 while True:
-                    output = await backend.read()
-                    if not output:
-                        break
-                    await websocket.send_text(output)
-            except Exception:
+                    raw_msg = await websocket.receive_text()
+                    try:
+                        msg = json.loads(raw_msg)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(msg, dict):
+                        continue
+
+                    msg_type = msg.get("type")
+                    if msg_type == "input":
+                        backend.write(str(msg.get("data", "")))
+                    elif msg_type == "resize":
+                        try:
+                            rows = int(msg.get("rows", DEFAULT_ROWS))
+                            cols = int(msg.get("cols", DEFAULT_COLS))
+                        except (ValueError, TypeError):
+                            continue
+                        if rows > 0 and cols > 0:
+                            backend.resize(rows, cols)
+            except (WebSocketDisconnect, OSError, EOFError, RuntimeError):
                 pass
             finally:
-                with contextlib.suppress(Exception):
-                    await websocket.close()
-
-        read_task = asyncio.create_task(pty_to_ws())
-
-        try:
-            while True:
-                raw_msg = await websocket.receive_text()
-                msg = json.loads(raw_msg)
-                msg_type = msg.get("type")
-                if msg_type == "input":
-                    backend.write(str(msg.get("data", "")))
-                elif msg_type == "resize":
-                    rows = int(msg.get("rows", DEFAULT_ROWS))
-                    cols = int(msg.get("cols", DEFAULT_COLS))
-                    backend.resize(rows, cols)
-        except WebSocketDisconnect:
-            pass
+                read_task.cancel()
+                backend.close()
+                with contextlib.suppress(
+                    asyncio.CancelledError, OSError, RuntimeError
+                ):
+                    await read_task
         finally:
             active_sessions -= 1
-            read_task.cancel()
-            backend.close()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await read_task
             if (
                 app_config.once
                 and active_sessions == 0

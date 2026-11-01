@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 import contextlib
 import os
 import struct
@@ -69,21 +70,27 @@ class UnixPtyBackend:
             command: 起動するコマンドと引数のリスト。
         """
         self.master_fd, slave_fd = pty.openpty()
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         env = os.environ.copy()
         env.setdefault("TERM", "xterm-256color")
         env.setdefault("LANG", "C.UTF-8")
 
-        self.proc = subprocess.Popen(
-            command,
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            start_new_session=True,
-            env=env,
-        )
-        # 親プロセス側では slave_fd を即座に閉じる
-        # （重要：閉じないとプロセス終了時に EOF が検知できない）
-        os.close(slave_fd)
+        try:
+            self.proc = subprocess.Popen(
+                command,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                start_new_session=True,
+                env=env,
+            )
+        except Exception:
+            os.close(self.master_fd)
+            raise
+        finally:
+            # 親プロセス側では slave_fd を即座に閉じる
+            # （重要：閉じないとプロセス終了時に EOF が検知できない）
+            os.close(slave_fd)
 
     async def read(self) -> str:
         """PTY から出力データを非同期に読み取る。
@@ -107,7 +114,7 @@ class UnixPtyBackend:
         loop.add_reader(self.master_fd, _on_readable)
         try:
             raw = await future
-            return raw.decode("utf-8", errors="replace")
+            return self._decoder.decode(raw, final=(not raw))
         finally:
             with contextlib.suppress(Exception):
                 loop.remove_reader(self.master_fd)

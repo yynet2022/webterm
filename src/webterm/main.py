@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import errno
 import shlex
 import socket
 import sys
@@ -37,12 +38,21 @@ def is_port_available(host: str, port: int) -> bool:
         port: 確認するポート番号。
 
     Returns:
-        bool: 利用可能なら True、使用中またはバインド不可なら False。
+        bool: 利用可能なら True、使用中または権限不足なら False。
+
+    Raises:
+        ValueError: ホスト名解決不可やバインド不能なアドレスの場合。
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
             sock.bind((host, port))
-        except OSError:
+        except socket.gaierror as exc:
+            raise ValueError(f"Cannot resolve host '{host}': {exc}") from exc
+        except OSError as exc:
+            if exc.errno == errno.EADDRNOTAVAIL:
+                raise ValueError(
+                    f"Cannot bind to address '{host}': {exc}"
+                ) from exc
             return False
         return True
 
@@ -181,8 +191,8 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
 
 def main() -> None:
     """CLI のメインエントリポイント。"""
-    config = parse_args()
     try:
+        config = parse_args()
         config.port = resolve_port(
             config.host,
             config.port,
