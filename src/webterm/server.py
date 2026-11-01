@@ -95,11 +95,17 @@ def handle_client_message(raw_msg: str, backend: PtyBackend) -> None:
 
     msg_type = msg.get("type")
     if msg_type == "input":
-        backend.write(str(msg.get("data", "")))
+        data = msg.get("data")
+        if isinstance(data, str) and data:
+            backend.write(data)
     elif msg_type == "resize":
+        rows_raw = msg.get("rows", DEFAULT_ROWS)
+        cols_raw = msg.get("cols", DEFAULT_COLS)
+        if isinstance(rows_raw, bool) or isinstance(cols_raw, bool):
+            return
         try:
-            rows = int(msg.get("rows", DEFAULT_ROWS))
-            cols = int(msg.get("cols", DEFAULT_COLS))
+            rows = int(rows_raw)
+            cols = int(cols_raw)
         except (ValueError, TypeError):
             return
         if (

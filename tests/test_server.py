@@ -329,10 +329,13 @@ def test_websocket_endpoint_communication() -> None:
         websocket.send_text("not-valid-json")
         websocket.send_json([1, 2, 3])
         websocket.send_json({"type": "resize", "rows": "invalid", "cols": 80})
+        websocket.send_json({"type": "resize", "rows": True, "cols": 80})
         websocket.send_json({"type": "resize", "rows": 0, "cols": 80})
         websocket.send_json({"type": "resize", "rows": 70000, "cols": 80})
         websocket.send_json({"type": "resize", "rows": 40, "cols": 120})
         websocket.send_json({"type": "unknown"})
+        websocket.send_json({"type": "input", "data": None})
+        websocket.send_json({"type": "input", "data": ""})
         websocket.send_json({"type": "input", "data": "exit\n"})
 
     assert len(created_backends) == 1

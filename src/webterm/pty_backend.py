@@ -71,6 +71,7 @@ class UnixPtyBackend:
         """
         self.master_fd, slave_fd = pty.openpty()
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._eof: bool = False
         env = os.environ.copy()
         env.setdefault("TERM", "xterm-256color")
         env.setdefault("LANG", "C.UTF-8")
@@ -98,6 +99,9 @@ class UnixPtyBackend:
         Returns:
             str: 読み取った文字列データ。EOF の場合は空文字列。
         """
+        if self._eof:
+            return ""
+
         loop = asyncio.get_running_loop()
 
         while True:
@@ -121,6 +125,7 @@ class UnixPtyBackend:
                     loop.remove_reader(self.master_fd)
 
             if not raw:
+                self._eof = True
                 return self._decoder.decode(b"", final=True)
 
             decoded = self._decoder.decode(raw, final=False)

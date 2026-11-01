@@ -322,8 +322,10 @@ async def test_unix_pty_backend_read_split_multibyte_utf8(
 
     first = await backend.read()
     second = await backend.read()
+    third = await backend.read()
     assert first == "あ"
     assert second == ""
+    assert third == ""
 
 
 def test_unix_pty_backend_write_and_resize(

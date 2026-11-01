@@ -117,7 +117,7 @@ def split_command(command_str: str) -> list[str]:
     else:
         parts = shlex.split(command_str, posix=True)
 
-    if not parts:
+    if not parts or not parts[0]:
         raise ValueError("Command string must not be empty.")
     return parts
 

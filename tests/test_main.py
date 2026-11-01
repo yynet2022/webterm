@@ -69,6 +69,8 @@ def test_split_command_empty_raises() -> None:
     """空または空白のみのコマンド文字列で ValueError となることを検証する。"""
     with pytest.raises(ValueError, match="Command string must not be empty"):
         split_command("   ")
+    with pytest.raises(ValueError, match="Command string must not be empty"):
+        split_command('""')
 
 
 def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
