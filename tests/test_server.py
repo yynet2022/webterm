@@ -447,3 +447,44 @@ def test_websocket_pty_factory_failure_cleans_up(
     captured = capsys.readouterr()
     assert "Error: Failed to launch command" in captured.err
     assert exit_called == [True]
+
+
+def test_websocket_client_disconnect_suppresses_close_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """クライアント切断時に websocket.close の WebSocketDisconnect を抑制する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+    """
+    from starlette.websockets import WebSocket as StarletteWebSocket
+
+    original_close = StarletteWebSocket.close
+
+    async def disconnecting_close(
+        self: StarletteWebSocket,
+        code: int = 1000,
+        reason: str | None = None,
+    ) -> None:
+        await original_close(self, code=code, reason=reason)
+        raise WebSocketDisconnect(code=1006)
+
+    monkeypatch.setattr(StarletteWebSocket, "close", disconnecting_close)
+
+    created_backends: list[FakePtyBackend] = []
+
+    def fake_factory(command: list[str]) -> PtyBackend:
+        backend = FakePtyBackend(command)
+        created_backends.append(backend)
+        return backend
+
+    config = AppConfig(command=["test-shell"])
+    app = create_app(config=config, pty_factory=fake_factory)
+    client = TestClient(app)
+
+    with client.websocket_connect(f"/{config.token}/ws") as websocket:
+        assert websocket.receive_text() == "hello from pty"
+
+    assert len(created_backends) == 1
+    assert created_backends[0].closed is True
+    assert app.state.active_sessions == 0

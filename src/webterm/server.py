@@ -194,7 +194,9 @@ def create_app(
                     f"\r\n\x1b[31m[Error: Failed to launch command: {exc}]"
                     "\x1b[0m\r\n"
                 )
-                with contextlib.suppress(OSError, RuntimeError):
+                with contextlib.suppress(
+                    WebSocketDisconnect, OSError, RuntimeError
+                ):
                     await websocket.send_text(error_msg)
                     await websocket.close()
                 return
@@ -210,7 +212,9 @@ def create_app(
                 except (WebSocketDisconnect, OSError, RuntimeError):
                     pass
                 finally:
-                    with contextlib.suppress(OSError, RuntimeError):
+                    with contextlib.suppress(
+                        WebSocketDisconnect, OSError, RuntimeError
+                    ):
                         await websocket.close()
 
             read_task = asyncio.create_task(pty_to_ws())
@@ -225,7 +229,10 @@ def create_app(
                 read_task.cancel()
                 backend.close()
                 with contextlib.suppress(
-                    asyncio.CancelledError, OSError, RuntimeError
+                    asyncio.CancelledError,
+                    WebSocketDisconnect,
+                    OSError,
+                    RuntimeError,
                 ):
                     await read_task
         finally:
