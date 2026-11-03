@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "webterm"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Browser-based terminal emulator launcher using FastAPI and xterm.js"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,6 +28,9 @@ dev = [
 
 [project.scripts]
 webterm = "webterm.main:main"
+
+[tool.hatch.version]
+path = "src/webterm/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/webterm"]
