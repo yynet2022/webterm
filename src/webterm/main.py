@@ -10,6 +10,7 @@ import shlex
 import socket
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 import uvicorn
 
@@ -122,6 +123,31 @@ def split_command(command_str: str) -> list[str]:
     return parts
 
 
+def validate_ssl_files(
+    ssl_keyfile: str | None,
+    ssl_certfile: str | None,
+) -> None:
+    """SSL 秘密鍵と証明書の指定内容およびファイル存在を検証する。
+
+    Args:
+        ssl_keyfile: SSL 秘密鍵ファイルのパス。
+        ssl_certfile: SSL 証明書ファイルのパス。
+
+    Raises:
+        ValueError: 片方のみ指定された場合、またはファイルが存在しない場合。
+    """
+    if ssl_keyfile is None and ssl_certfile is None:
+        return
+    if ssl_keyfile is None or ssl_certfile is None:
+        raise ValueError(
+            "Both --ssl-keyfile and --ssl-certfile must be specified."
+        )
+    if not Path(ssl_keyfile).is_file():
+        raise ValueError(f"SSL key file not found: {ssl_keyfile}")
+    if not Path(ssl_certfile).is_file():
+        raise ValueError(f"SSL certificate file not found: {ssl_certfile}")
+
+
 def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
     """コマンドライン引数を解析して AppConfig を生成する。
 
@@ -172,7 +198,19 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
         action="store_true",
         help="Stop the server when the last terminal session ends",
     )
+    parser.add_argument(
+        "--ssl-keyfile",
+        default=None,
+        help="SSL key file path to enable HTTPS",
+    )
+    parser.add_argument(
+        "--ssl-certfile",
+        default=None,
+        help="SSL certificate file path to enable HTTPS",
+    )
     args = parser.parse_args(argv)
+
+    validate_ssl_files(args.ssl_keyfile, args.ssl_certfile)
 
     host = WILDCARD_HOST if args.host in WILDCARD_HOSTS else args.host
     port = DEFAULT_PORT if args.port is None else args.port
@@ -186,6 +224,8 @@ def parse_args(argv: Sequence[str] | None = None) -> AppConfig:
         auto_port=auto_port,
         theme=args.theme,
         once=args.once,
+        ssl_keyfile=args.ssl_keyfile,
+        ssl_certfile=args.ssl_certfile,
     )
 
 
@@ -221,6 +261,8 @@ def main() -> None:
         host=config.host,
         port=config.port,
         log_level="warning",
+        ssl_keyfile=config.ssl_keyfile,
+        ssl_certfile=config.ssl_certfile,
     )
     server = uvicorn.Server(uvicorn_config)
     with contextlib.suppress(KeyboardInterrupt):

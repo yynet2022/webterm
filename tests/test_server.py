@@ -178,6 +178,52 @@ def test_lifespan_wildcard_host_outputs_lan_ips_and_opens_localhost(
     assert opened_urls == ["http://127.0.0.1:8000/tok-xyz"]
 
 
+def test_lifespan_ssl_outputs_https_urls(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """SSL 設定時に https:// で URL が出力されブラウザが開くことを検証する。
+
+    Args:
+        monkeypatch: pytest の MonkeyPatch フィクスチャ。
+        capsys: pytest の標準出力・標準エラー出力キャプチャフィクスチャ。
+    """
+    opened_urls: list[str] = []
+
+    def fake_open(url: str) -> bool:
+        opened_urls.append(url)
+        return True
+
+    monkeypatch.setattr(webbrowser, "open", fake_open)
+    monkeypatch.setattr(
+        webterm.server,
+        "get_local_ip_addresses",
+        lambda: ["192.168.1.10"],
+    )
+
+    config = AppConfig(
+        command=["bash"],
+        host="0.0.0.0",
+        port=8443,
+        open_browser=True,
+        token="ssl-tok",
+        ssl_keyfile="server.key",
+        ssl_certfile="server.crt",
+    )
+    app = create_app(config)
+    with TestClient(app) as client:
+        response = client.get("/ssl-tok")
+        assert response.status_code == 200
+
+    captured = capsys.readouterr()
+    assert (
+        "Server started at: https://127.0.0.1:8443/ssl-tok (Command: bash)"
+        in captured.out
+    )
+    assert "and https://192.168.1.10:8443/ssl-tok" in captured.out
+    assert opened_urls == ["https://127.0.0.1:8443/ssl-tok"]
+
+
 def test_get_local_ip_addresses_collects_unique_non_loopback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -266,6 +312,8 @@ def test_index_endpoint_returns_html() -> None:
     assert 'window.addEventListener("beforeunload"' in response.text
     assert "term.attachCustomKeyEventHandler" in response.text
     assert 'terminalElement.addEventListener("contextmenu"' in response.text
+    assert "if (event.shiftKey)" in response.text
+    assert "const fallbackCopyText =" in response.text
 
 
 def test_index_endpoint_applies_custom_theme() -> None:

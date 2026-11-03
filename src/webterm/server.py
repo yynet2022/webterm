@@ -137,16 +137,20 @@ def create_app(
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         """サーバの起動・終了時のライフサイクル処理を行う。"""
         cmd_str = " ".join(app_config.command)
+        is_ssl = bool(app_config.ssl_keyfile and app_config.ssl_certfile)
+        scheme = "https" if is_ssl else "http"
         is_wildcard = app_config.host in WILDCARD_HOSTS
         primary_host = DEFAULT_HOST if is_wildcard else app_config.host
         primary_url = (
-            f"http://{primary_host}:{app_config.port}/{app_config.token}"
+            f"{scheme}://{primary_host}:{app_config.port}/{app_config.token}"
         )
         print(f"Server started at: {primary_url} (Command: {cmd_str})")
 
         if is_wildcard:
             for ip in get_local_ip_addresses():
-                lan_url = f"http://{ip}:{app_config.port}/{app_config.token}"
+                lan_url = (
+                    f"{scheme}://{ip}:{app_config.port}/{app_config.token}"
+                )
                 print(f"and {lan_url}")
 
         print("Press Ctrl+C to stop the server.")

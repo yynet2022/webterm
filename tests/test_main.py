@@ -127,6 +127,72 @@ def test_parse_args_invalid_theme_raises() -> None:
         parse_args(["--theme", "unknown-theme"])
 
 
+def test_parse_args_ssl_options_valid(tmp_path: Path) -> None:
+    """有効な SSL 鍵・証明書ファイルを指定した場合の解析を検証する。
+
+    Args:
+        tmp_path: pytest の一時ディレクトリフィクスチャ。
+    """
+    key_file = tmp_path / "server.key"
+    cert_file = tmp_path / "server.crt"
+    key_file.write_text("dummy-key", encoding="utf-8")
+    cert_file.write_text("dummy-cert", encoding="utf-8")
+
+    config = parse_args(
+        [
+            "--ssl-keyfile",
+            str(key_file),
+            "--ssl-certfile",
+            str(cert_file),
+        ]
+    )
+    assert config.ssl_keyfile == str(key_file)
+    assert config.ssl_certfile == str(cert_file)
+
+
+def test_parse_args_ssl_options_invalid(tmp_path: Path) -> None:
+    """SSL 引数の片方指定や存在しないファイルで ValueError となることを検証。
+
+    Args:
+        tmp_path: pytest の一時ディレクトリフィクスチャ。
+    """
+    key_file = tmp_path / "server.key"
+    key_file.write_text("dummy-key", encoding="utf-8")
+    missing_file = tmp_path / "missing.pem"
+
+    with pytest.raises(
+        ValueError,
+        match="Both --ssl-keyfile and --ssl-certfile must be specified",
+    ):
+        parse_args(["--ssl-keyfile", str(key_file)])
+
+    with pytest.raises(
+        ValueError,
+        match="SSL key file not found",
+    ):
+        parse_args(
+            [
+                "--ssl-keyfile",
+                str(missing_file),
+                "--ssl-certfile",
+                str(key_file),
+            ]
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="SSL certificate file not found",
+    ):
+        parse_args(
+            [
+                "--ssl-keyfile",
+                str(key_file),
+                "--ssl-certfile",
+                str(missing_file),
+            ]
+        )
+
+
 def test_is_port_available_true(monkeypatch: pytest.MonkeyPatch) -> None:
     """ソケットのバインドに成功した場合に True が返ることを検証する。
 

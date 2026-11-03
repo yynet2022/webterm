@@ -65,6 +65,8 @@ class AppConfig:
         theme: ターミナルのカラーテーマ名。
         token: アクセス認証用のランダムトークン文字列。
         once: 全ターミナルセッション終了時にサーバを停止するかどうか。
+        ssl_keyfile: SSL 秘密鍵ファイルのパス。
+        ssl_certfile: SSL 証明書ファイルのパス。
     """
 
     command: list[str] = field(default_factory=get_default_command)
@@ -75,3 +77,5 @@ class AppConfig:
     theme: str = DEFAULT_THEME
     token: str = field(default_factory=generate_token)
     once: bool = False
+    ssl_keyfile: str | None = None
+    ssl_certfile: str | None = None

@@ -1,0 +1,117 @@
+# LinuxやWindowsで「自己署名証明書」を使い `https` で webterm を起動し、それを Windows のブラウザ（Chrome や Edge）で接続する方法
+
+### 1. 証明書の要件と注意点（SANの指定）
+
+　現在のブラウザは「SAN（サブジェクト代替名: Subject Alternative Name）」という項目にアクセス先のIPアドレスやドメイン（`localhost`、`127.0.0.1`、LANのIPアドレスなど）が明記されていないと、安全ではないとして接続をブロックまたは警告します。
+　そのため、証明書発行時に必ずSANを含める必要があります。
+
+### 2. 自己署名証明書（俗称：オレオレ証明書）を発行する
+
+　証明書（`server.crt`）と秘密鍵（`server.key`）の発行には以下の2つの方法があります。設定ファイルを作らずコマンド1行で完結する【方法A（推奨）】が一番手軽です。
+
+#### 【方法A】コマンド1行で発行する（推奨）
+
+　OpenSSL 1.1.1 以降では `-addext` オプションを使うことで、設定ファイルを用意しなくても1コマンドでSAN付き証明書を作成できます。
+
+Linux / WSL のターミナルで実行する場合：
+```bash
+openssl req -x509 -nodes -days 1825 -newkey rsa:2048 \
+  -keyout server.key \
+  -out server.crt \
+  -subj "/CN=Web terminal Server" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:192.168.1.100"
+```
+※ `IP:192.168.1.100` の部分は、実際にアクセスするサーバーのIPアドレスに合わせて書き換えてください（複数ある場合はカンマ区切りで `IP:192.168.1.200` のように追加できます）。
+
+##### 【重要】Windows上の Git Bash で実行する場合の注意点
+　Git Bash（MinGW / MSYS2）上で上記のコマンドをそのまま実行すると、Git Bashのパス自動変換機能により、引数の `/CN=...` の先頭スラッシュがPOSIXパスと誤認され、勝手に `C:/Program Files/Git/CN=...` のようなWindowsパスに書き換えられてしまいます。
+　その結果、以下のような構文エラーが発生します：
+```text
+req: subject name is expected to be in the format /type0=value0/type1=value1/type2=... where characters may be escaped by \. This name is not in that format: 'C:/Program Files/Git/CN=Web terminal Server'
+```
+　これを防ぐため、Git Bash で実行する際は先頭に `env MSYS_NO_PATHCONV=1` を付与してパス自動変換を無効化してください：
+```bash
+env MSYS_NO_PATHCONV=1 openssl req -x509 -nodes -days 1825 -newkey rsa:2048 \
+  -keyout server.key \
+  -out server.crt \
+  -subj "/CN=Web terminal Server" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:192.168.1.100"
+```
+
+---
+
+#### 【方法B】設定ファイル（san.txt）を用意して発行する場合
+
+　SANの指定項目が多い場合や、設定内容をファイルとして残しておきたい場合は、設定ファイルを作成して読み込ませます。
+　※ `openssl req` コマンドでは `-extfile` オプションは使用できません（`openssl x509` 用のオプションのため、エラーになります）。代わりに `-config` を使用します。
+
+1. `san.txt` という名前で以下の内容を保存します（IPアドレスやドメインは環境に合わせて書き換えてください）：
+```ini
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = Web terminal Server
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = my-local-server.local
+IP.1 = 127.0.0.1
+IP.2 = 192.168.1.100
+```
+
+2. 以下のコマンドを実行して証明書と秘密鍵を作成します：
+```bash
+openssl req -x509 -nodes -days 1825 -newkey rsa:2048 \
+  -keyout server.key \
+  -out server.crt \
+  -config san.txt
+```
+※ Git Bash の場合でも、この方法Bであれば `/CN=...` をコマンドライン引数で渡さないため、パス変換エラーは発生しません。
+
+---
+
+　これで、`server.key`（秘密鍵）と `server.crt`（証明書）の2つのファイルができあがります。
+
+### 3. webterm での設定・起動
+
+　できた2つのファイルを webterm の起動オプションに指定します。
+
+```bash
+% webterm --host 0.0.0.0 --port 8000 --ssl-keyfile=server.key --ssl-certfile=server.crt
+```
+
+### 4. ユーザー（Windows）側の作業
+
+　この状態でも Windows のブラウザ（Chrome や Edge）から接続はできますが、警告画面が出てきます。「詳細設定」をクリックし、表示された説明文の最下部にある 「～に進む（安全ではありません）」 というリンクをクリックすることで利用ができます。
+
+　一時的な利用ならこれでいいかもしれませんが、今後も頻繁にアクセスするならば、自己署名証明書をWindowsへインポートすることがおすすめです。
+
+　作成した `server.crt` の方をWindowsにコピーします。（なお、`server.key` は秘密鍵なので配ったりしてはいけません）
+
+　Windows で以下の手順で登録します。
+
+1. コピーした `server.crt` をダブルクリックする。
+2. 「証明書のインストール」ボタンを押す。
+3. 保存場所に「ローカル コンピューター」を選んで「次へ」。
+4. 【最重要】 「証明書をすべて次のストアに配置する」を選び、参照ボタンから 「信頼されたルート証明機関」 を選択する。
+5. そのまま完了まで進む。
+
+　これでWindowsのChromeやEdgeから、サーバー（https://192.168.x.x:8000 など）へ警告なしで静かにアクセスできるようになり、右クリックによるスマートコピー＆ペーストが利用できます。
+
+### 5. Windows からの証明書の削除手順
+
+　なお、インポートした自己署名証明書が不要になった場合、Windowsからの削除は以下の手順になります。
+
+1. キーボードの `Win + R` キーを押して「ファイル名を指定して実行」ダイアログを開く。
+2. 名前欄に `certlm.msc` と入力して「OK」を押す（もしインポート時に「ローカル コンピューター」ではなく「現在のユーザー」を選んでいた場合は `certmgr.msc` と入力する）。
+3. ユーザーアカウント制御（UAC）の確認画面が表示されたら「はい」を選択する。
+4. 「certlm（ローカル コンピューターの証明書）」管理画面が開いたら、左側のツリーから「信頼されたルート証明機関」を展開し、その下の「証明書」フォルダーをクリックする。
+5. 右側の一覧から、登録した証明書（上記のコマンド例で作成した場合は「発行先」および「発行者」が `Web terminal Server` となっているもの）を探す。
+6. 該当する証明書を右クリックし、メニューから「削除」を選択する。
+7. 削除の確認メッセージが表示されたら「はい」をクリックし、管理画面を閉じてブラウザを再起動する。

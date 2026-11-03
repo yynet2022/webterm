@@ -173,11 +173,31 @@
         term.open(terminalElement);
         fitAddon.fit();
 
+        const fallbackCopyText = (text) => {
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.style.position = "fixed";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand("copy");
+            } catch {
+                // コピーに失敗した場合は無視する
+            }
+            document.body.removeChild(textarea);
+            term.focus();
+        };
+
         const copySelection = () => {
             if (term.hasSelection()) {
                 const selectedText = term.getSelection();
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(selectedText).catch(() => {});
+                    navigator.clipboard.writeText(selectedText).catch(() => {
+                        fallbackCopyText(selectedText);
+                    });
+                } else {
+                    fallbackCopyText(selectedText);
                 }
                 term.clearSelection();
             }
@@ -207,16 +227,22 @@
             return true;
         });
 
-        // 右クリック制御（選択中はコピー、非選択時はペースト）
+        // 右クリック制御（Shift+右クリックまたは非HTTPSペースト時は標準メニュー、選択中はコピー、非選択時はペースト）
         terminalElement.addEventListener("contextmenu", async (event) => {
-            event.preventDefault();
+            if (event.shiftKey) {
+                term.focus();
+                return;
+            }
             if (term.hasSelection()) {
+                event.preventDefault();
                 copySelection();
                 return;
             }
             if (!navigator.clipboard || !navigator.clipboard.readText) {
+                term.focus();
                 return;
             }
+            event.preventDefault();
             try {
                 const text = await navigator.clipboard.readText();
                 if (text) {
