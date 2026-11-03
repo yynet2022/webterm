@@ -267,7 +267,3 @@ def main() -> None:
     server = uvicorn.Server(uvicorn_config)
     with contextlib.suppress(KeyboardInterrupt):
         server.run()
-
-
-if __name__ == "__main__":
-    main()

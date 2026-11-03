@@ -524,8 +524,8 @@ def test_main_exits_on_empty_command(
     assert "Error: Command string must not be empty" in captured.err
 
 
-def test_main_module_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
-    """スクリプト直接実行時 (__main__) に main が呼ばれることを検証する。
+def test_package_main_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Webterm パッケージ実行 (__main__) で main が呼ばれることを検証。
 
     Args:
         monkeypatch: pytest の MonkeyPatch フィクスチャ。
@@ -547,7 +547,13 @@ def test_main_module_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(uvicorn, "Server", DummyServer)
 
-    main_path = Path(webterm.main.__file__).resolve()
+    main_path = Path(webterm.main.__file__).resolve().parent / "__main__.py"
     runpy.run_path(str(main_path), run_name="__main__")
 
     assert called == [True]
+
+    # 直接実行でない場合 (モジュールとしてのインポート等) に
+    # main が呼ばれないことを検証する。
+    called.clear()
+    runpy.run_path(str(main_path), run_name="webterm.__main__")
+    assert called == []
